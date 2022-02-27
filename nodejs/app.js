@@ -3,6 +3,14 @@ var port = process.env.PORT || 3000,
     fs = require('fs'),
     html = fs.readFileSync('index.html');
 
+var Redis = require('ioredis');
+var redis_address = process.env.REDIS_ADDRESS || 'redis://127.0.0.1:6379';
+var redis = new Redis(redis_address);
+
+redis.on('ready',function() {
+    console.log("Redis server is ready ", redis.status);
+});
+
 var log = function(entry) {
     fs.appendFileSync('/tmp/sample-app.log', new Date().toISOString() + ' - ' + entry + '\n');
 };
