@@ -15,7 +15,8 @@ export class AwsStack extends Stack {
 
     const appName = 'blitz';
 
-    // const targetVpc = new aws_ec2.Vpc(this, `${appName}Vpc`);
+    // TODO: maybe not necessary to go PRIVATE_ISOLATED here, defaults are much simpler
+    // const vpc = new aws_ec2.Vpc(this, `${appName}Vpc`);
     const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`, {
       subnetConfiguration: [
         {
@@ -28,6 +29,7 @@ export class AwsStack extends Stack {
 
     // TODO: this is wrong - we don't use lambda here, only ECS NodeJS instances inside Beanstalk
     // See: https://stackoverflow.com/questions/60826562/is-there-any-way-that-i-can-assign-security-group-and-vpc-to-my-web-application
+    // or:  https://stackoverflow.com/questions/60521210/how-to-refer-exsisting-vpc-to-deploy-beanstalk-app-using-aws-cdk-typescript
     const lambdaSecurityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
       vpc: vpc,
       description: 'SecurityGroup into which Lambdas will be deployed',
