@@ -216,6 +216,8 @@ export class AwsStack extends Stack {
       vpcSecurityGroupIds: [securityGroup.securityGroupId],
     });
 
+     console.log('Cluster Address:Port', cluster.attrRedisEndpointAddress, cluster.attrRedisEndpointPort);
+
     // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
     // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
   }
