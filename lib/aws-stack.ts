@@ -15,6 +15,11 @@ export class AwsStack extends Stack {
 
     const appName = 'blitz';
 
+
+    /**
+     * VPC - stick with default or go fully private isolated?
+     */
+
     // TODO: maybe not necessary to go PRIVATE_ISOLATED here, defaults are much simpler
     // const vpc = new aws_ec2.Vpc(this, `${appName}Vpc`);
     const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`, {
@@ -27,6 +32,18 @@ export class AwsStack extends Stack {
       ],
     });
 
+    // Network monitoring with flow logs
+    new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
+      resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
+    });
+
+
+
+
+    /**
+     * This part is maybe not even necessary as the vpc subnets for beanstalk are set inside the eb options
+     */
+
     // TODO: this is wrong - we don't use lambda here, only ECS NodeJS instances inside Beanstalk
     // See: https://stackoverflow.com/questions/60826562/is-there-any-way-that-i-can-assign-security-group-and-vpc-to-my-web-application
     // or:  https://stackoverflow.com/questions/60521210/how-to-refer-exsisting-vpc-to-deploy-beanstalk-app-using-aws-cdk-typescript
@@ -36,6 +53,27 @@ export class AwsStack extends Stack {
       allowAllOutbound: false,
     });
 
+    const ecSecurityGroup = new aws_ec2.SecurityGroup(
+      this,
+      `${appName}-elasti-cache-security-group`,
+      {
+        vpc: vpc,
+        description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
+        allowAllOutbound: false,
+      },
+    );
+
+    ecSecurityGroup.connections.allowFrom(
+      lambdaSecurityGroup,
+      aws_ec2.Port.tcp(6379),
+      'Redis ingress 6379',
+    );
+    ecSecurityGroup.connections.allowTo(
+      lambdaSecurityGroup,
+      aws_ec2.Port.tcp(6379),
+      'Redis egress 6379',
+    );
+    
     // const secretsManagerVpcEndpointSecurityGroup = new aws_ec2.SecurityGroup(
     //   this,
     //   `${appName}-secrets-manager-security-group`,
@@ -61,33 +99,12 @@ export class AwsStack extends Stack {
     //   securityGroups: [secretsManagerVpcEndpointSecurityGroup],
     // });
 
-    const ecSecurityGroup = new aws_ec2.SecurityGroup(
-      this,
-      `${appName}-elasti-cache-security-group`,
-      {
-        vpc: vpc,
-        description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
-        allowAllOutbound: false,
-      },
-    );
 
-    ecSecurityGroup.connections.allowFrom(
-      lambdaSecurityGroup,
-      aws_ec2.Port.tcp(6379),
-      'Redis ingress 6379',
-    );
-    ecSecurityGroup.connections.allowTo(
-      lambdaSecurityGroup,
-      aws_ec2.Port.tcp(6379),
-      'Redis egress 6379',
-    );
 
-    // Network monitoring with flow logs
-    new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
-      resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
-    });
 
-    // The Elastic Beanstalk Application
+    /**
+     * Elastic Beanstalk Application
+     */
     const app = new aws_elasticbeanstalk.CfnApplication(this, `${appName}-eb-application`, {
       applicationName: appName,
     });
@@ -144,7 +161,7 @@ export class AwsStack extends Stack {
       },
     );
 
-    // TODO: I think this env also needs a security group!
+    // TODO: I think this env also needs a security group!?
     const elbEnv = new aws_elasticbeanstalk.CfnEnvironment(this, `${appName}-environment`, {
       // environmentName: 'MySampleEnvironment',
       applicationName: app.applicationName || appName,
@@ -156,6 +173,12 @@ export class AwsStack extends Stack {
 
     // Also very important - make sure that `app` exists before creating an app version
     appVersionProps.addDependsOn(app);
+
+
+
+    /**
+     * ElastiCache with Redis Cluster
+     */
 
     const subnetGroup = new aws_elasticache.CfnSubnetGroup(this, `${appName}-subnet-group`, {
       description: `List of subnets used for redis cache ${appName}`,
@@ -192,5 +215,8 @@ export class AwsStack extends Stack {
       cacheSubnetGroupName: subnetGroup.ref,
       vpcSecurityGroupIds: [securityGroup.securityGroupId],
     });
+
+    // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
+    // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
   }
 }
