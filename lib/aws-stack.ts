@@ -15,6 +15,7 @@ export class AwsStack extends Stack {
     super(scope, id, props);
 
     const appName = 'blitz';
+    const ADD_FLOW_LOG = false;
 
 
     /**
@@ -35,9 +36,11 @@ export class AwsStack extends Stack {
     // });
 
     // Network monitoring with flow logs
-    new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
-      resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
-    });
+    if(ADD_FLOW_LOG) {
+      new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
+        resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
+      });
+    }
 
 
 
@@ -117,8 +120,8 @@ export class AwsStack extends Stack {
     const managedPolicy = aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AWSElasticBeanstalkWebTier')
     EbInstanceRole.addManagedPolicy(managedPolicy);
     
-    const profileName = `${appName}-InstanceProfile`
-    const instanceProfile = new aws_iam.CfnInstanceProfile(this, profileName, {
+    const profileName = `${appName}-elasticbeanstalk-instance-profile`
+    new aws_iam.CfnInstanceProfile(this, profileName, {
       instanceProfileName: profileName,
       roles: [
         EbInstanceRole.roleName
@@ -126,27 +129,37 @@ export class AwsStack extends Stack {
     });
 
     // Example of some options which can be configured
-    const optionSettingProperties: aws_elasticbeanstalk.CfnEnvironment.OptionSettingProperty[] = [
+    const optionSettings: aws_elasticbeanstalk.CfnEnvironment.OptionSettingProperty[] = [
       {
         namespace: 'aws:autoscaling:launchconfiguration',
         optionName: 'InstanceType',
-        value: 't3.small',
+        value: 't2.micro',
+      },
+      {
+        namespace: 'aws:autoscaling:asg',
+        optionName: 'MinSize',
+        value: '1',
+      },
+      {
+        namespace: 'aws:autoscaling:asg',
+        optionName: 'MaxSize',
+        value: '2',
       },
       {
         namespace: 'aws:autoscaling:launchconfiguration',
         optionName: 'IamInstanceProfile',
         value: profileName
       },
-      {
-        namespace: 'aws:elasticbeanstalk:container:nodejs',
-        optionName: 'NodeVersion',
-        value: '16.14.0',
-      },
-      {
-        namespace: 'aws:ec2:vpc',
-        optionName: 'VPCId',
-        value: vpc.vpcId,
-      },
+      // {
+      //   namespace: 'aws:elasticbeanstalk:container:nodejs',
+      //   optionName: 'NodeVersion',
+      //   value: '14.18.3',
+      // },
+      // {
+      //   namespace: 'aws:ec2:vpc',
+      //   optionName: 'VPCId',
+      //   value: vpc.vpcId,
+      // },
       // {
       //   namespace: 'aws:ec2:vpc',
       //   optionName: 'Subnets',
@@ -177,8 +190,8 @@ export class AwsStack extends Stack {
     const elbEnv = new aws_elasticbeanstalk.CfnEnvironment(this, `${appName}-environment`, {
       // environmentName: 'MySampleEnvironment',
       applicationName: app.applicationName || appName,
-      solutionStackName: '64bit Amazon Linux 2018.03 v4.11.0 running Node.js',
-      optionSettings: optionSettingProperties,
+      solutionStackName: '64bit Amazon Linux 2 v5.4.10 running Node.js 14',
+      optionSettings: optionSettings,
       // This line is critical - reference the label created in this same stack
       versionLabel: appVersionProps.ref,
     });
@@ -226,7 +239,9 @@ export class AwsStack extends Stack {
       vpcSecurityGroupIds: [securityGroup.securityGroupId],
     });
 
-    console.log('Cluster Address:Port', cluster.attrRedisEndpointAddress, cluster.attrRedisEndpointPort);
+
+    // TODO: add redis primary endpoint url to SSM
+    // https://bobbyhadz.com/blog/aws-cdk-ssm-parameters 
 
     // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
     // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
