@@ -27,7 +27,6 @@ export class AwsStack extends Stack {
     // });
 
 
-
     /**
      * ElastiCache with Redis Cluster
      */
@@ -45,14 +44,27 @@ export class AwsStack extends Stack {
       vpc: vpc,
     });
 
+    // TODO: that is not enough (or not correct) to connect from beanstalk to redis
+    // const ecSecurityGroup = new aws_ec2.SecurityGroup(this, 'ElastiCacheSG', {
+    //   vpc: vpc,
+    //   description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
+    //   allowAllOutbound: false,
+    // });
+
+    // ecSecurityGroup.connections.allowFrom(securityGroup, aws_ec2.Port.tcp(6379), 'Redis ingress 6379');
+    // ecSecurityGroup.connections.allowTo(securityGroup, aws_ec2.Port.tcp(6379), 'Redis egress 6379');
+
     // The cluster resource itself
     const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
-      cacheNodeType: 'cache.t2.micro',
+      cacheNodeType: 'cache.t3.micro',
       engine: 'redis',
       numCacheNodes: 1,
       autoMinorVersionUpgrade: true,
       cacheSubnetGroupName: subnetGroup.ref,
-      vpcSecurityGroupIds: [securityGroup.securityGroupId],
+      vpcSecurityGroupIds: [
+        securityGroup.securityGroupId, 
+        // ecSecurityGroup.securityGroupId
+      ],
     });
 
     // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
