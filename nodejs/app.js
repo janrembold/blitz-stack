@@ -5,15 +5,22 @@ var port = process.env.PORT || 3000,
 
 var Redis = require('ioredis');
 var redis_address = process.env.REDIS_ADDRESS || 'redis://127.0.0.1:6379';
-var redis = new Redis(redis_address);
 
-redis.on('ready',function() {
-    console.log("Redis server is ready ", redis.status);
-});
+try {
+    var redis = new Redis(redis_address);
+    
+    redis.on('ready',() => {
+        console.log("Redis server is ready ", redis.status);
+    });
+    
+    redis.on('error', err => {
+        console.log('REDIS: FAILED', err);
+    })
+} catch {}
 
-var log = function(entry) {
-    fs.appendFileSync('/tmp/sample-app.log', new Date().toISOString() + ' - ' + entry + '\n');
-};
+// var log = function(entry) {
+//     fs.appendFileSync('/tmp/sample-app.log', new Date().toISOString() + ' - ' + entry + '\n');
+// };
 
 var server = http.createServer(function (req, res) {
     if (req.method === 'POST') {
@@ -25,9 +32,9 @@ var server = http.createServer(function (req, res) {
 
         req.on('end', function() {
             if (req.url === '/') {
-                log('Received message: ' + body);
+                console.log('Received message: ' + body);
             } else if (req.url = '/scheduled') {
-                log('Received task ' + req.headers['x-aws-sqsd-taskname'] + ' scheduled at ' + req.headers['x-aws-sqsd-scheduled-at']);
+                console.log('Received task ' + req.headers['x-aws-sqsd-taskname'] + ' scheduled at ' + req.headers['x-aws-sqsd-scheduled-at']);
             }
 
             res.writeHead(200, 'OK', {'Content-Type': 'text/plain'});

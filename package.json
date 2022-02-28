@@ -14,7 +14,8 @@
     "cdk.destroy": "cdk destroy",
     "cdk.synth": "cdk synth",
     "cdk.deploy": "cdk deploy",
-    "cdk.diff": "cdk diff"
+    "cdk.diff": "cdk diff",
+    "zip": "rm -f nodejs.zip && cd nodejs && rm -rf node_modules && zip ../nodejs.zip -r * .[^.]*"
   },
   "devDependencies": {
     "@types/jest": "27.4.0",
