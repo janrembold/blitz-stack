@@ -6,102 +6,57 @@ import {
   aws_s3_assets,
   Stack,
   StackProps,
+  CfnOutput
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
-// Todo: https://github.com/aws-samples/aws-cdk-elasticache-redis-iam-rbac/blob/main/lib/redis-rbac-stack.ts#L208
 export class AwsStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     const appName = 'blitz';
-    const ADD_FLOW_LOG = false;
-
 
     /**
      * VPC - stick with default or go fully private isolated?
      */
-
     const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`);
 
-    // TODO: maybe not necessary to go PRIVATE_ISOLATED here, defaults are much simpler
-    // const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`, {
-    //   subnetConfiguration: [
-    //     {
-    //       cidrMask: 24,
-    //       name: 'Isolated',
-    //       subnetType: aws_ec2.SubnetType.PRIVATE_ISOLATED,
-    //     },
-    //   ],
-    // });
-
     // Network monitoring with flow logs
-    if(ADD_FLOW_LOG) {
-      new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
-        resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
-      });
-    }
+    // new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
+    //   resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
+    // });
 
 
 
     /**
-     * This part is maybe not even necessary as the vpc subnets for beanstalk are set inside the eb options
+     * ElastiCache with Redis Cluster
      */
 
-    // TODO: this is wrong - we don't use lambda here, only ECS NodeJS instances inside Beanstalk
-    // See: https://stackoverflow.com/questions/60826562/is-there-any-way-that-i-can-assign-security-group-and-vpc-to-my-web-application
-    // or:  https://stackoverflow.com/questions/60521210/how-to-refer-exsisting-vpc-to-deploy-beanstalk-app-using-aws-cdk-typescript
-    // const lambdaSecurityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
-    //   vpc: vpc,
-    //   description: 'SecurityGroup into which Lambdas will be deployed',
-    //   allowAllOutbound: false,
-    // });
+     const subnetGroup = new aws_elasticache.CfnSubnetGroup(this, `${appName}-subnet-group`, {
+      description: `List of subnets used for redis cache ${appName}`,
+      // subnetIds: vpc.isolatedSubnets.map(function (subnet) {
+      //   return subnet.subnetId;
+      // }),
+      subnetIds: vpc.privateSubnets.map(({subnetId}) => subnetId)
+    });
 
-    // const ecSecurityGroup = new aws_ec2.SecurityGroup(
-    //   this,
-    //   `${appName}-elasti-cache-security-group`,
-    //   {
-    //     vpc: vpc,
-    //     description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
-    //     allowAllOutbound: false,
-    //   },
-    // );
+    // The security group that defines network level access to the cluster
+    const securityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
+      vpc: vpc,
+    });
 
-    // ecSecurityGroup.connections.allowFrom(
-    //   lambdaSecurityGroup,
-    //   aws_ec2.Port.tcp(6379),
-    //   'Redis ingress 6379',
-    // );
-    // ecSecurityGroup.connections.allowTo(
-    //   lambdaSecurityGroup,
-    //   aws_ec2.Port.tcp(6379),
-    //   'Redis egress 6379',
-    // );
-    
-    // const secretsManagerVpcEndpointSecurityGroup = new aws_ec2.SecurityGroup(
-    //   this,
-    //   `${appName}-secrets-manager-security-group`,
-    //   {
-    //     vpc: vpc,
-    //     description: 'SecurityGroup for the VPC Endpoint Secrets Manager',
-    //     allowAllOutbound: false,
-    //   },
-    // );
+    // The cluster resource itself
+    const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
+      cacheNodeType: 'cache.t2.micro',
+      engine: 'redis',
+      numCacheNodes: 1,
+      autoMinorVersionUpgrade: true,
+      cacheSubnetGroupName: subnetGroup.ref,
+      vpcSecurityGroupIds: [securityGroup.securityGroupId],
+    });
 
-    // secretsManagerVpcEndpointSecurityGroup.connections.allowFrom(
-    //   lambdaSecurityGroup,
-    //   aws_ec2.Port.tcp(443),
-    // );
-
-    // TODO: this might be used to store the redis user credentials
-    // const secretsManagerEndpoint = vpc.addInterfaceEndpoint(`${appName}-secrets-manager`, {
-    //   service: aws_ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-    //   subnets: {
-    //     subnetType: aws_ec2.SubnetType.PRIVATE_ISOLATED,
-    //   },
-    //   open: false,
-    //   securityGroups: [secretsManagerVpcEndpointSecurityGroup],
-    // });
+    // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
+    // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
 
 
 
@@ -150,21 +105,16 @@ export class AwsStack extends Stack {
         optionName: 'IamInstanceProfile',
         value: profileName
       },
-      // {
-      //   namespace: 'aws:elasticbeanstalk:container:nodejs',
-      //   optionName: 'NodeVersion',
-      //   value: '14.18.3',
-      // },
-      // {
-      //   namespace: 'aws:ec2:vpc',
-      //   optionName: 'VPCId',
-      //   value: vpc.vpcId,
-      // },
-      // {
-      //   namespace: 'aws:ec2:vpc',
-      //   optionName: 'Subnets',
-      //   value: 'subnet-1f234567'
-      // },
+      {
+        namespace: 'aws:elasticbeanstalk:application:environment',
+        optionName: 'REDIS_ENDPOINT_ADDRESS',
+        value: cluster.attrRedisEndpointAddress
+      },
+      {
+        namespace: 'aws:elasticbeanstalk:application:environment',
+        optionName: 'REDIS_ENDPOINT_PORT',
+        value: cluster.attrRedisEndpointPort
+      }
     ];
 
     // Construct an S3 asset from the ZIP located from directory up.
@@ -199,51 +149,8 @@ export class AwsStack extends Stack {
     // Also very important - make sure that `app` exists before creating an app version
     appVersionProps.addDependsOn(app);
 
-
-
-    /**
-     * ElastiCache with Redis Cluster
-     */
-
-    const subnetGroup = new aws_elasticache.CfnSubnetGroup(this, `${appName}-subnet-group`, {
-      description: `List of subnets used for redis cache ${appName}`,
-      // subnetIds: vpc.isolatedSubnets.map(function (subnet) {
-      //   return subnet.subnetId;
-      // }),
-      subnetIds: vpc.privateSubnets.map(({subnetId}) => subnetId)
-    });
-
-    // The security group that defines network level access to the cluster
-    const securityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
-      vpc: vpc,
-    });
-
-    // This is not used but maybe simpler permissions for the ec2 connection permissions?
-    //  const connections = new aws_ec2.Connections({
-    //   securityGroups: [securityGroup],
-    //   defaultPort: new aws_ec2.Port({
-    //     stringRepresentation: 'Redis Port',
-    //    protocol: aws_ec2.Protocol.TCP,
-    //    fromPort: 6379,
-    //    toPort: 6379
-    //   })
-    //  });
-
-    // The cluster resource itself
-    const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
-      cacheNodeType: 'cache.t2.micro',
-      engine: 'redis',
-      numCacheNodes: 1,
-      autoMinorVersionUpgrade: true,
-      cacheSubnetGroupName: subnetGroup.ref,
-      vpcSecurityGroupIds: [securityGroup.securityGroupId],
-    });
-
-
-    // TODO: add redis primary endpoint url to SSM
-    // https://bobbyhadz.com/blog/aws-cdk-ssm-parameters 
-
-    // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
-    // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
+    new CfnOutput(this, 'beanstalkEndpointUrl', { value: elbEnv.attrEndpointUrl });
+    new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
+    new CfnOutput(this, 'redisEndpointPort', { value: cluster.attrRedisEndpointPort });
   }
 }
