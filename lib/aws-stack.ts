@@ -2,6 +2,7 @@ import {
   aws_ec2,
   aws_elasticache,
   aws_elasticbeanstalk,
+  aws_iam,
   aws_s3_assets,
   Stack,
   StackProps,
@@ -20,23 +21,23 @@ export class AwsStack extends Stack {
      * VPC - stick with default or go fully private isolated?
      */
 
+    const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`);
+
     // TODO: maybe not necessary to go PRIVATE_ISOLATED here, defaults are much simpler
-    // const vpc = new aws_ec2.Vpc(this, `${appName}Vpc`);
-    const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`, {
-      subnetConfiguration: [
-        {
-          cidrMask: 24,
-          name: 'Isolated',
-          subnetType: aws_ec2.SubnetType.PRIVATE_ISOLATED,
-        },
-      ],
-    });
+    // const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`, {
+    //   subnetConfiguration: [
+    //     {
+    //       cidrMask: 24,
+    //       name: 'Isolated',
+    //       subnetType: aws_ec2.SubnetType.PRIVATE_ISOLATED,
+    //     },
+    //   ],
+    // });
 
     // Network monitoring with flow logs
     new aws_ec2.FlowLog(this, `${appName}-vpc-flow-log`, {
       resourceType: aws_ec2.FlowLogResourceType.fromVpc(vpc),
     });
-
 
 
 
@@ -47,32 +48,32 @@ export class AwsStack extends Stack {
     // TODO: this is wrong - we don't use lambda here, only ECS NodeJS instances inside Beanstalk
     // See: https://stackoverflow.com/questions/60826562/is-there-any-way-that-i-can-assign-security-group-and-vpc-to-my-web-application
     // or:  https://stackoverflow.com/questions/60521210/how-to-refer-exsisting-vpc-to-deploy-beanstalk-app-using-aws-cdk-typescript
-    const lambdaSecurityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
-      vpc: vpc,
-      description: 'SecurityGroup into which Lambdas will be deployed',
-      allowAllOutbound: false,
-    });
+    // const lambdaSecurityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
+    //   vpc: vpc,
+    //   description: 'SecurityGroup into which Lambdas will be deployed',
+    //   allowAllOutbound: false,
+    // });
 
-    const ecSecurityGroup = new aws_ec2.SecurityGroup(
-      this,
-      `${appName}-elasti-cache-security-group`,
-      {
-        vpc: vpc,
-        description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
-        allowAllOutbound: false,
-      },
-    );
+    // const ecSecurityGroup = new aws_ec2.SecurityGroup(
+    //   this,
+    //   `${appName}-elasti-cache-security-group`,
+    //   {
+    //     vpc: vpc,
+    //     description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
+    //     allowAllOutbound: false,
+    //   },
+    // );
 
-    ecSecurityGroup.connections.allowFrom(
-      lambdaSecurityGroup,
-      aws_ec2.Port.tcp(6379),
-      'Redis ingress 6379',
-    );
-    ecSecurityGroup.connections.allowTo(
-      lambdaSecurityGroup,
-      aws_ec2.Port.tcp(6379),
-      'Redis egress 6379',
-    );
+    // ecSecurityGroup.connections.allowFrom(
+    //   lambdaSecurityGroup,
+    //   aws_ec2.Port.tcp(6379),
+    //   'Redis ingress 6379',
+    // );
+    // ecSecurityGroup.connections.allowTo(
+    //   lambdaSecurityGroup,
+    //   aws_ec2.Port.tcp(6379),
+    //   'Redis egress 6379',
+    // );
     
     // const secretsManagerVpcEndpointSecurityGroup = new aws_ec2.SecurityGroup(
     //   this,
@@ -109,6 +110,21 @@ export class AwsStack extends Stack {
       applicationName: appName,
     });
 
+    const EbInstanceRole = new aws_iam.Role(this, `${appName}-aws-elasticbeanstalk-ec2-role`, {
+      assumedBy: new aws_iam.ServicePrincipal('ec2.amazonaws.com'),
+    });
+    
+    const managedPolicy = aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AWSElasticBeanstalkWebTier')
+    EbInstanceRole.addManagedPolicy(managedPolicy);
+    
+    const profileName = `${appName}-InstanceProfile`
+    const instanceProfile = new aws_iam.CfnInstanceProfile(this, profileName, {
+      instanceProfileName: profileName,
+      roles: [
+        EbInstanceRole.roleName
+      ]
+    });
+
     // Example of some options which can be configured
     const optionSettingProperties: aws_elasticbeanstalk.CfnEnvironment.OptionSettingProperty[] = [
       {
@@ -119,10 +135,7 @@ export class AwsStack extends Stack {
       {
         namespace: 'aws:autoscaling:launchconfiguration',
         optionName: 'IamInstanceProfile',
-        // Here you could reference an instance profile by ARN (e.g. myIamInstanceProfile.attrArn)
-        // For the default setup, leave this as is (it is assumed this role exists)
-        // https://stackoverflow.com/a/55033663/6894670
-        value: 'aws-elasticbeanstalk-ec2-role',
+        value: profileName
       },
       {
         namespace: 'aws:elasticbeanstalk:container:nodejs',
@@ -134,7 +147,6 @@ export class AwsStack extends Stack {
         optionName: 'VPCId',
         value: vpc.vpcId,
       },
-      //
       // {
       //   namespace: 'aws:ec2:vpc',
       //   optionName: 'Subnets',
@@ -182,12 +194,10 @@ export class AwsStack extends Stack {
 
     const subnetGroup = new aws_elasticache.CfnSubnetGroup(this, `${appName}-subnet-group`, {
       description: `List of subnets used for redis cache ${appName}`,
-      subnetIds: vpc.isolatedSubnets.map(function (subnet) {
-        return subnet.subnetId;
-      }),
-      // subnetIds: vpc.privateSubnets.map(function(subnet) {
-      //  return subnet.subnetId;
-      // })
+      // subnetIds: vpc.isolatedSubnets.map(function (subnet) {
+      //   return subnet.subnetId;
+      // }),
+      subnetIds: vpc.privateSubnets.map(({subnetId}) => subnetId)
     });
 
     // The security group that defines network level access to the cluster
@@ -216,7 +226,7 @@ export class AwsStack extends Stack {
       vpcSecurityGroupIds: [securityGroup.securityGroupId],
     });
 
-     console.log('Cluster Address:Port', cluster.attrRedisEndpointAddress, cluster.attrRedisEndpointPort);
+    console.log('Cluster Address:Port', cluster.attrRedisEndpointAddress, cluster.attrRedisEndpointPort);
 
     // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
     // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
