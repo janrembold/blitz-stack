@@ -43,6 +43,11 @@ export class AwsStack extends Stack {
     const securityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
       vpc: vpc,
     });
+    
+    const redisConnections = new aws_ec2.Connections({
+        securityGroups: [securityGroup],
+        defaultPort: aws_ec2.Port.tcp(6379)
+    });
 
     // TODO: that is not enough (or not correct) to connect from beanstalk to redis
     // const ecSecurityGroup = new aws_ec2.SecurityGroup(this, 'ElastiCacheSG', {
