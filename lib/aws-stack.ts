@@ -44,12 +44,13 @@ export class AwsStack extends Stack {
       vpc: vpc,
     });
     
-    const redisConnections = new aws_ec2.Connections({
-        securityGroups: [securityGroup],
-        defaultPort: aws_ec2.Port.tcp(6379)
-    });
+    // TODO: both variations are not enough (or not correct) to connect from beanstalk to redis
 
-    // TODO: that is not enough (or not correct) to connect from beanstalk to redis
+    // new aws_ec2.Connections({
+    //     securityGroups: [securityGroup],
+    //     defaultPort: aws_ec2.Port.tcp(6379)
+    // });
+
     // const ecSecurityGroup = new aws_ec2.SecurityGroup(this, 'ElastiCacheSG', {
     //   vpc: vpc,
     //   description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
@@ -59,6 +60,8 @@ export class AwsStack extends Stack {
     // ecSecurityGroup.connections.allowFrom(securityGroup, aws_ec2.Port.tcp(6379), 'Redis ingress 6379');
     // ecSecurityGroup.connections.allowTo(securityGroup, aws_ec2.Port.tcp(6379), 'Redis egress 6379');
 
+
+    
     // The cluster resource itself
     const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
       cacheNodeType: 'cache.t3.micro',
