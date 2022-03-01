@@ -4,16 +4,17 @@ var port = process.env.PORT || 3000,
     html = fs.readFileSync('index.html');
 
 var Redis = require('ioredis');
-var redis = new Redis(
-    process.env.REDIS_ENDPOINT_PORT || 6379, 
-    process.env.REDIS_ENDPOINT_ADDRESS || '127.0.0.1'
-);
+var redisAddress = process.env.REDIS_ENDPOINT_ADDRESS || 'localhost';
+var redisPort = process.env.REDIS_ENDPOINT_PORT || '6379';
+var redisUrl = `redis://${redisAddress}:${redisPort}`;
+var redis = new Redis(redisUrl);
 
 var response = {
     'time': new Date().toISOString(),
     'redis_error': 'none',
-    'redis_connect': 'none',
-    'redis_url': process.env.REDIS_ENDPOINT_ADDRESS,
+    'redis_connect': 'not connected',
+    'redis_url': redisUrl,
+    'redis_address': process.env.REDIS_ENDPOINT_ADDRESS,
     'redis_port': process.env.REDIS_ENDPOINT_PORT
 }
 
