@@ -41,8 +41,12 @@ export class AwsStack extends Stack {
 
     // The security group that defines network level access to the cluster
     const securityGroup = new aws_ec2.SecurityGroup(this, `${appName}-security-group`, {
-      vpc: vpc,
+      allowAllOutbound: true,
+      vpc: vpc,      
     });
+
+    // securityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(6379), 'Redis from anywhere');
+    securityGroup.addIngressRule(aws_ec2.Peer.ipv4('10.0.0.0/24'), aws_ec2.Port.tcp(6379), 'Redis from 10.0.0.0/24 only');
     
     // TODO: both variations are not enough (or not correct) to connect from beanstalk to redis
 
@@ -169,8 +173,8 @@ export class AwsStack extends Stack {
     // Also very important - make sure that `app` exists before creating an app version
     appVersionProps.addDependsOn(app);
 
-    new CfnOutput(this, 'beanstalkEndpointUrl', { value: elbEnv.attrEndpointUrl });
-    new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
-    new CfnOutput(this, 'redisEndpointPort', { value: cluster.attrRedisEndpointPort });
+    // new CfnOutput(this, 'beanstalkEndpointUrl', { value: elbEnv.attrEndpointUrl });
+    // new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
+    // new CfnOutput(this, 'redisEndpointPort', { value: cluster.attrRedisEndpointPort });
   }
 }
