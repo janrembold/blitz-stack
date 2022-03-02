@@ -73,10 +73,7 @@ export class AwsStack extends Stack {
       numCacheNodes: 1,
       autoMinorVersionUpgrade: true,
       cacheSubnetGroupName: subnetGroup.ref,
-      vpcSecurityGroupIds: [
-        securityGroup.securityGroupId, 
-        // ecSecurityGroup.securityGroupId
-      ],
+      vpcSecurityGroupIds: [securityGroup.securityGroupId],
     });
 
     // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
@@ -107,6 +104,14 @@ export class AwsStack extends Stack {
       ]
     });
 
+
+    const subnetOptions = vpc.privateSubnets.map(({subnetId}) => ({
+      namespace: 'aws:ec2:vpc',
+      optionName: 'Subnets',
+      value: subnetId
+    }))
+
+
     // Example of some options which can be configured
     const optionSettings: aws_elasticbeanstalk.CfnEnvironment.OptionSettingProperty[] = [
       {
@@ -114,6 +119,17 @@ export class AwsStack extends Stack {
         optionName: 'InstanceType',
         value: 't2.micro',
       },
+      {
+        namespace: 'aws:ec2:vpc',
+        optionName: 'VPCId',
+        value: vpc.vpcId
+      },
+      // ...subnetOptions,
+      // {
+      //   namespace: 'aws:autoscaling:launchconfiguration',
+      //   optionName: 'SecurityGroups',
+      //   value: securityGroup.securityGroupId
+      // },
       {
         namespace: 'aws:autoscaling:asg',
         optionName: 'MinSize',
