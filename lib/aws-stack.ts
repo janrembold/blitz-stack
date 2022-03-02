@@ -104,13 +104,13 @@ export class AwsStack extends Stack {
       ]
     });
 
+    const albSecurityGroup = new aws_ec2.SecurityGroup(this, 'albSecurityGroup', {
+      allowAllOutbound: true,
+      vpc: vpc,
+    });
 
-    const subnetOptions = vpc.privateSubnets.map(({subnetId}) => ({
-      namespace: 'aws:ec2:vpc',
-      optionName: 'Subnets',
-      value: subnetId
-    }))
-
+    albSecurityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(80));
+    albSecurityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(443));
 
     // Example of some options which can be configured
     const optionSettings: aws_elasticbeanstalk.CfnEnvironment.OptionSettingProperty[] = [
@@ -124,12 +124,16 @@ export class AwsStack extends Stack {
         optionName: 'VPCId',
         value: vpc.vpcId
       },
-      // ...subnetOptions,
-      // {
-      //   namespace: 'aws:autoscaling:launchconfiguration',
-      //   optionName: 'SecurityGroups',
-      //   value: securityGroup.securityGroupId
-      // },
+      {
+        namespace: 'aws:ec2:vpc',
+        optionName: 'ELBSubnets',
+        value: vpc.publicSubnets.map(value => value.subnetId).join(','),
+      },
+      {
+        namespace: 'aws:ec2:vpc',
+        optionName: 'Subnets',
+        value: vpc.privateSubnets.map(value => value.subnetId).join(','),
+      },
       {
         namespace: 'aws:autoscaling:asg',
         optionName: 'MinSize',
