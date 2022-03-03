@@ -44,7 +44,6 @@ export class AwsStack extends Stack {
     securityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(6379), 'Redis from anywhere');
     // securityGroup.addIngressRule(aws_ec2.Peer.ipv4('10.0.0.0/24'), aws_ec2.Port.tcp(6379), 'Redis from 10.0.0.0/24 only');
     
-    
     // The cluster resource itself
     const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
       cacheNodeType: 'cache.t3.micro',
@@ -157,9 +156,7 @@ export class AwsStack extends Stack {
       },
     );
 
-    // TODO: I think this env also needs a security group!?
     const ebEnvironment = new aws_elasticbeanstalk.CfnEnvironment(this, `${appName}-environment`, {
-      // environmentName: 'MySampleEnvironment',
       applicationName: ebApp.applicationName || appName,
       solutionStackName: '64bit Amazon Linux 2 v5.4.10 running Node.js 14',
       optionSettings: optionSettings,
