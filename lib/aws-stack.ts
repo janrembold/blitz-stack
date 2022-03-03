@@ -30,12 +30,8 @@ export class AwsStack extends Stack {
     /**
      * ElastiCache with Redis Cluster
      */
-
-     const subnetGroup = new aws_elasticache.CfnSubnetGroup(this, `${appName}-subnet-group`, {
+    const subnetGroup = new aws_elasticache.CfnSubnetGroup(this, `${appName}-subnet-group`, {
       description: `List of subnets used for redis cache ${appName}`,
-      // subnetIds: vpc.isolatedSubnets.map(function (subnet) {
-      //   return subnet.subnetId;
-      // }),
       subnetIds: vpc.privateSubnets.map(({subnetId}) => subnetId)
     });
 
@@ -45,26 +41,9 @@ export class AwsStack extends Stack {
       vpc: vpc,      
     });
 
-    // securityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(6379), 'Redis from anywhere');
-    securityGroup.addIngressRule(aws_ec2.Peer.ipv4('10.0.0.0/24'), aws_ec2.Port.tcp(6379), 'Redis from 10.0.0.0/24 only');
+    securityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(6379), 'Redis from anywhere');
+    // securityGroup.addIngressRule(aws_ec2.Peer.ipv4('10.0.0.0/24'), aws_ec2.Port.tcp(6379), 'Redis from 10.0.0.0/24 only');
     
-    // TODO: both variations are not enough (or not correct) to connect from beanstalk to redis
-
-    // new aws_ec2.Connections({
-    //     securityGroups: [securityGroup],
-    //     defaultPort: aws_ec2.Port.tcp(6379)
-    // });
-
-    // const ecSecurityGroup = new aws_ec2.SecurityGroup(this, 'ElastiCacheSG', {
-    //   vpc: vpc,
-    //   description: 'SecurityGroup associated with the ElastiCache Redis Cluster',
-    //   allowAllOutbound: false,
-    // });
-
-    // ecSecurityGroup.connections.allowFrom(securityGroup, aws_ec2.Port.tcp(6379), 'Redis ingress 6379');
-    // ecSecurityGroup.connections.allowTo(securityGroup, aws_ec2.Port.tcp(6379), 'Redis egress 6379');
-
-
     
     // The cluster resource itself
     const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
@@ -74,43 +53,47 @@ export class AwsStack extends Stack {
       autoMinorVersionUpgrade: true,
       cacheSubnetGroupName: subnetGroup.ref,
       vpcSecurityGroupIds: [securityGroup.securityGroupId],
+      port: 6379,
     });
 
     // TODO: next level would be Redis auto scaling - but this is only available for much larger nodes:
     // https://docs.aws.amazon.com/AmazonElastiCache/latest/red-ug/AutoScaling.html
 
 
-
-
     /**
      * Elastic Beanstalk Application
      */
-    const app = new aws_elasticbeanstalk.CfnApplication(this, `${appName}-eb-application`, {
+    const ebApp = new aws_elasticbeanstalk.CfnApplication(this, `${appName}-eb-application`, {
       applicationName: appName,
     });
 
-    const EbInstanceRole = new aws_iam.Role(this, `${appName}-aws-elasticbeanstalk-ec2-role`, {
+    // Construct an S3 asset from the ZIP located from directory up.
+    const zipArchive = new aws_s3_assets.Asset(this, `${appName}-s3-zip`, {
+      path: `${__dirname}/../nodejs.zip`,
+    });
+
+    const ebInstanceRole = new aws_iam.Role(this, `${appName}-aws-elasticbeanstalk-ec2-role`, {
       assumedBy: new aws_iam.ServicePrincipal('ec2.amazonaws.com'),
     });
     
-    const managedPolicy = aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AWSElasticBeanstalkWebTier')
-    EbInstanceRole.addManagedPolicy(managedPolicy);
+    const ebManagedPolicy = aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AWSElasticBeanstalkWebTier')
+    ebInstanceRole.addManagedPolicy(ebManagedPolicy);
     
-    const profileName = `${appName}-elasticbeanstalk-instance-profile`
-    new aws_iam.CfnInstanceProfile(this, profileName, {
-      instanceProfileName: profileName,
+    const ebProfileName = `${appName}-elasticbeanstalk-instance-profile`
+    new aws_iam.CfnInstanceProfile(this, ebProfileName, {
+      instanceProfileName: ebProfileName,
       roles: [
-        EbInstanceRole.roleName
+        ebInstanceRole.roleName
       ]
     });
 
-    const albSecurityGroup = new aws_ec2.SecurityGroup(this, 'albSecurityGroup', {
+    const ebSecurityGroup = new aws_ec2.SecurityGroup(this, `${appName}-elasticbeanstalk-security-group`, {
       allowAllOutbound: true,
       vpc: vpc,
     });
 
-    albSecurityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(80));
-    albSecurityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(443));
+    ebSecurityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(80));
+    ebSecurityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(443));
 
     // Example of some options which can be configured
     const optionSettings: aws_elasticbeanstalk.CfnEnvironment.OptionSettingProperty[] = [
@@ -147,7 +130,7 @@ export class AwsStack extends Stack {
       {
         namespace: 'aws:autoscaling:launchconfiguration',
         optionName: 'IamInstanceProfile',
-        value: profileName
+        value: ebProfileName
       },
       {
         namespace: 'aws:elasticbeanstalk:application:environment',
@@ -161,14 +144,8 @@ export class AwsStack extends Stack {
       }
     ];
 
-    // Construct an S3 asset from the ZIP located from directory up.
-    const zipArchive = new aws_s3_assets.Asset(this, `${appName}-s3-zip`, {
-      path: `${__dirname}/../nodejs.zip`,
-    });
-
     // Create an app version from the S3 asset defined above
-    // The S3 "putObject" will occur first before CF generates the template
-    const appVersionProps = new aws_elasticbeanstalk.CfnApplicationVersion(
+    const ebAppVersionProps = new aws_elasticbeanstalk.CfnApplicationVersion(
       this,
       `${appName}-eb-version-props`,
       {
@@ -181,20 +158,21 @@ export class AwsStack extends Stack {
     );
 
     // TODO: I think this env also needs a security group!?
-    const elbEnv = new aws_elasticbeanstalk.CfnEnvironment(this, `${appName}-environment`, {
+    const ebEnvironment = new aws_elasticbeanstalk.CfnEnvironment(this, `${appName}-environment`, {
       // environmentName: 'MySampleEnvironment',
-      applicationName: app.applicationName || appName,
+      applicationName: ebApp.applicationName || appName,
       solutionStackName: '64bit Amazon Linux 2 v5.4.10 running Node.js 14',
       optionSettings: optionSettings,
       // This line is critical - reference the label created in this same stack
-      versionLabel: appVersionProps.ref,
+      versionLabel: ebAppVersionProps.ref,
     });
 
     // Also very important - make sure that `app` exists before creating an app version
-    appVersionProps.addDependsOn(app);
+    ebAppVersionProps.addDependsOn(ebApp);
+    ebEnvironment.addDependsOn(subnetGroup);
 
-    // new CfnOutput(this, 'beanstalkEndpointUrl', { value: elbEnv.attrEndpointUrl });
-    // new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
-    // new CfnOutput(this, 'redisEndpointPort', { value: cluster.attrRedisEndpointPort });
+    new CfnOutput(this, 'beanstalkEndpointUrl', { value: ebEnvironment.attrEndpointUrl });
+    new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
+    new CfnOutput(this, 'redisEndpointPort', { value: cluster.attrRedisEndpointPort });
   }
 }
