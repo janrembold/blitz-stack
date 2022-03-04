@@ -1,4 +1,5 @@
 import {
+  aws_cloudwatch,
   aws_ec2,
   aws_elasticache,
   aws_elasticbeanstalk,
@@ -6,7 +7,8 @@ import {
   aws_s3_assets,
   Stack,
   StackProps,
-  CfnOutput
+  CfnOutput,
+  Duration
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 
@@ -167,6 +169,34 @@ export class AwsStack extends Stack {
     // Also very important - make sure that `app` exists before creating an app version
     ebAppVersionProps.addDependsOn(ebApp);
     ebEnvironment.addDependsOn(subnetGroup);
+
+
+    /**
+     * CloudWatch Metrics Dashboard 
+     */
+    const dashboard = new aws_cloudwatch.Dashboard(this, `${appName}-dashboard`, {
+      dashboardName: 'Blitz-Dashboard'
+    });
+
+    const latencyWidget = new aws_cloudwatch.GraphWidget({
+      width: 24,
+      title: 'Blitz Dashboard',
+      statistic: 'Sum',
+      period: Duration.seconds(30),
+      region: this.region,
+      left: [
+        new aws_cloudwatch.Metric({
+          metricName: 'HTTPCode_Backend_2XX',
+          namespace: 'AWS/ELB'
+        })
+      ]
+    });
+
+    dashboard.addWidgets(latencyWidget);
+
+    /**
+     * Endpoint URL Output
+     */
 
     new CfnOutput(this, 'beanstalkEndpointUrl', { value: ebEnvironment.attrEndpointUrl });
     new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
