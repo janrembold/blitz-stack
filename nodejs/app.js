@@ -43954,6 +43954,12 @@ var { Server, Namespace, Socket } = import_dist.default;
 
 // src/index.ts
 var import_redis = __toESM(require_dist10(), 1);
+function uuidv4() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0, v = c == "x" ? r : r & 3 | 8;
+    return v.toString(16);
+  });
+}
 var port = process.env.PORT || 3e3;
 var redisAddress = process.env.REDIS_ENDPOINT_ADDRESS || "localhost";
 var redisPort = process.env.REDIS_ENDPOINT_PORT || "6379";
@@ -43969,10 +43975,21 @@ var responseObj = {
     disconnectReason: "none"
   }
 };
+var redis = (0, import_redis.createClient)({ url: redisUrl });
+redis.on("connect", () => {
+  console.log("Redis Client connected");
+});
+redis.on("ready", () => {
+  console.log("Redis Client ready");
+});
+redis.on("error", (err) => {
+  console.log("Redis Client Error", err);
+  responseObj.error = err;
+});
 var app = (0, import_express.default)();
 var httpServer = (0, import_http.createServer)(app);
 var io2 = new Server(httpServer, {
-  cors: { origin: "*" },
+  cors: { origin: "*", credentials: true },
   pingTimeout: 5e3,
   pingInterval: 11e3
 });
@@ -43988,19 +44005,12 @@ io2.on("connection", async (socket) => {
     console.log("socket disconnected", reason, socket.id);
     responseObj.socket.disconnectReason = reason;
   });
-});
-(async () => {
-  const client = (0, import_redis.createClient)({ url: redisUrl });
-  client.on("error", (err) => {
-    console.log("Redis Client Error", err);
-    responseObj.error = err;
+  socket.on("init", async () => {
+    const uuid = uuidv4();
+    await redis.set(uuid, "value");
+    io2.emit("result", uuid);
   });
-  await client.connect();
-  responseObj.isConnected = true;
-  await client.set("key", "value");
-  const value = await client.get("key");
-  responseObj.response = value || "notthing";
-})();
+});
 httpServer.listen(port, () => {
   console.log("Started server on port " + port);
 });
