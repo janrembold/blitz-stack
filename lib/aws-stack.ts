@@ -8,9 +8,16 @@ import {
   Stack,
   StackProps,
   CfnOutput,
-  Duration
+  Duration,
+  aws_elasticloadbalancingv2,
+  aws_s3,
+  aws_s3_deployment,
+  aws_cloudfront,
+  aws_cloudfront_origins,
+  RemovalPolicy
 } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import * as path from 'path';
 
 export class AwsStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
@@ -19,7 +26,7 @@ export class AwsStack extends Stack {
     const appName = 'blitz';
 
     /**
-     * VPC - stick with default or go fully private isolated?
+     * VPC 
      */
     const vpc = new aws_ec2.Vpc(this, `${appName}-vpc`);
 
@@ -44,7 +51,6 @@ export class AwsStack extends Stack {
     });
 
     securityGroup.addIngressRule(aws_ec2.Peer.anyIpv4(), aws_ec2.Port.tcp(6379), 'Redis from anywhere');
-    // securityGroup.addIngressRule(aws_ec2.Peer.ipv4('10.0.0.0/24'), aws_ec2.Port.tcp(6379), 'Redis from 10.0.0.0/24 only');
     
     // The cluster resource itself
     const cluster = new aws_elasticache.CfnCacheCluster(this, `${appName}-cluster`, {
@@ -101,7 +107,17 @@ export class AwsStack extends Stack {
       {
         namespace: 'aws:autoscaling:launchconfiguration',
         optionName: 'InstanceType',
-        value: 't2.micro',
+        value: 't3.micro',
+      },
+      {
+        namespace: 'aws:elasticbeanstalk:environment',
+        optionName: 'LoadBalancerType',
+        value: 'network',
+      },
+      {
+        namespace: 'aws:elasticbeanstalk:cloudwatch:logs',
+        optionName: 'StreamLogs',
+        value: 'true',
       },
       {
         namespace: 'aws:ec2:vpc',
@@ -126,7 +142,7 @@ export class AwsStack extends Stack {
       {
         namespace: 'aws:autoscaling:asg',
         optionName: 'MaxSize',
-        value: '2',
+        value: '3',
       },
       {
         namespace: 'aws:autoscaling:launchconfiguration',
@@ -160,7 +176,8 @@ export class AwsStack extends Stack {
 
     const ebEnvironment = new aws_elasticbeanstalk.CfnEnvironment(this, `${appName}-environment`, {
       applicationName: ebApp.applicationName || appName,
-      solutionStackName: '64bit Amazon Linux 2 v5.4.10 running Node.js 14',
+      // environmentName: `${appName}-eb-env`,
+      solutionStackName: '64bit Amazon Linux 2 v5.5.0 running Node.js 16',
       optionSettings: optionSettings,
       // This line is critical - reference the label created in this same stack
       versionLabel: ebAppVersionProps.ref,
@@ -172,6 +189,35 @@ export class AwsStack extends Stack {
 
 
     /**
+     * Cloudfront S3 Website
+     */
+    const cfBucket = new aws_s3.Bucket(this, `${appName}-s3-website`, {
+      accessControl: aws_s3.BucketAccessControl.PRIVATE,
+      // don't use in producton mode
+      removalPolicy: RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+    });
+    
+    const originAccessIdentity = new aws_cloudfront.OriginAccessIdentity(this, `${appName}-origin-access-identity-website`);
+    cfBucket.grantRead(originAccessIdentity);
+    
+    const cfWebsite = new aws_cloudfront.Distribution(this, `${appName}-cf-website`, {
+      defaultRootObject: 'index.html',
+      defaultBehavior: {
+        origin: new aws_cloudfront_origins.S3Origin(cfBucket, {originAccessIdentity}),
+      },
+    });
+    
+    // new aws_s3_deployment.BucketDeployment(this, `${appName}-s3-website-bucket-deployment`, {
+    //   destinationBucket: bucket,
+    //   sources: [
+    //     aws_s3_deployment.Source.asset(path.resolve(__dirname, './dist'))
+    //   ]
+    // });
+
+
+
+    /** 
      * CloudWatch Metrics Dashboard 
      */
     const dashboard = new aws_cloudwatch.Dashboard(this, `${appName}-dashboard`, {
@@ -198,6 +244,7 @@ export class AwsStack extends Stack {
      * Endpoint URL Output
      */
 
+    new CfnOutput(this, 'cloudfrontEndpointUrl', { value: cfWebsite.distributionDomainName });
     new CfnOutput(this, 'beanstalkEndpointUrl', { value: ebEnvironment.attrEndpointUrl });
     new CfnOutput(this, 'redisEndpointUrl', { value: cluster.attrRedisEndpointAddress });
     new CfnOutput(this, 'redisEndpointPort', { value: cluster.attrRedisEndpointPort });
